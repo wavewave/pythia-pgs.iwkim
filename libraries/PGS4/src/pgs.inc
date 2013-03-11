@@ -103,7 +103,7 @@ c PGS detector parameters
 
       integer netacal,nphical
 
-      character*8 jet_alg
+      character*16 jet_alg
       real*8 deta,dphi,crack_frac,rmax,bfield,sagitta_res
       real*8 ecal_res_a,ecal_res_b,hcal_res,cal_fid_eff,met_res
       real*8 seed_thresh,shoulder_thresh,conesize

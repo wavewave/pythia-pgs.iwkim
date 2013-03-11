@@ -317,7 +317,7 @@ c scan for command line arguments
       read(84,'(f15.8)') hcal_res
       read(84,'(f15.8)') met_res
       read(84,'(f15.8)') crack_frac
-      read(84,'(a8)')    jet_alg
+      read(84,'(a16)')    jet_alg
       read(84,'(f15.8)') seed_thresh
       read(84,'(f15.8)') shoulder_thresh
       read(84,'(f15.8)') conesize
