@@ -317,7 +317,7 @@ c scan for command line arguments
       read(84,'(f15.8)') hcal_res
       read(84,'(f15.8)') met_res
       read(84,'(f15.8)') crack_frac
-      read(84,'(a5)')    jet_alg
+      read(84,'(a8)')    jet_alg
       read(84,'(f15.8)') seed_thresh
       read(84,'(f15.8)') shoulder_thresh
       read(84,'(f15.8)') conesize
@@ -2516,7 +2516,8 @@ c check pair distance
 
 c check beam distance
             if(v4pt(pktj(1,i))**2.lt.dmin) then
-              dmin = pktj(1,i)**2
+c                               original = pktj(1,i)**2
+              dmin = v4pt(pktj(1,i))**2    ! IWKIM change
               imin = i
               jmin = 0
             endif
@@ -2744,11 +2745,16 @@ c initialize
       enddo
 
 c find jet clusters with kt algorithm
-
+ 
       if(jet_alg.eq.'ktjet') then
         call pgs_kt_jets
       elseif(jet_alg.eq.'cone') then
         call pgs_cone_jets
+c IWKIM addition
+      elseif(jet_alg.eq.'antikt') then 
+        call pgs_antikt_jets 
+      else
+        call exit(-1)
       endif
 
 c The following routines fill the PGSOBJ common; each 
@@ -5629,3 +5635,316 @@ c return daughter four-momenta
       return
       end
 
+c------------------------------------------------------
+c---------------- IWKIM -------------------------------
+c------------------------------------------------------
+
+      subroutine pgs_antikt_jets
+
+
+      implicit none
+      include 'pgs.inc'
+
+      integer i,j,m,iktj,imax,imin,jmin,ieta,iphi,idis,npass
+      real*8 eta,phi,theta,etower,ettower,etjet,etmax,em,eh
+
+      real*8 tower_thresh
+      parameter(tower_thresh=0.5)
+
+      integer nktjmx,mktjmx
+      parameter(nktjmx=1000)
+      parameter(mktjmx=200)
+
+      integer nktj,nktjck
+      integer eaten(nktjmx),mktj(nktjmx),lisktj(mktjmx,nktjmx)
+      integer ktjeta(nktjmx),ktjphi(nktjmx)
+      integer sorted(nktjmx)
+
+      integer numcl,lisclu(nktjmx)
+
+      real*8 pktj(4,nktjmx),etaktj(nktjmx),phiktj(nktjmx)
+      real*8 dmin,dist,pgs_antikt_dist
+      real*8 distances(nktjmx*nktjmx)
+
+      logical done
+
+c  1. make intitial list of particles
+
+      nktj = 0
+
+      do ieta = 1,netacal
+        do iphi = 1,nphical
+          etower = ecal(ieta,iphi) + hcal(ieta,iphi)
+          if(etower.gt.0) then
+            call pgs_index_etaphi(ieta,iphi,eta,phi)
+            theta = 2.0 * datan(dexp(-eta))
+            ettower = etower * sin(theta)
+            if(ettower.gt.tower_thresh) then
+              if(nktj.le.nktjmx) then
+                nktj = nktj + 1
+                pktj(1,nktj)   = etower * cos(phi) * sin(theta)
+                pktj(2,nktj)   = etower * sin(phi) * sin(theta)
+                pktj(3,nktj)   = etower * cos(theta)
+                pktj(4,nktj)   = etower
+                etaktj(nktj)   = eta
+                phiktj(nktj)   = phi
+                mktj(nktj)     = 1
+                lisktj(1,nktj) = nktj
+                ktjeta(nktj)   = ieta
+                ktjphi(nktj)   = iphi
+                eaten(nktj)    = -1
+                sorted(nktj) = 0
+              else
+                write(pgs_log_unit,
+     .                '('' PGS_KT_JETS: maximum number of'',
+     .                  '' particles (3000) exceeded '')')
+              endif
+            endif
+          endif
+        enddo
+      enddo
+
+c make initial pair distance table
+
+      do i=1,nktj-1
+        do j=i+1,nktj
+          distances((i-1)*nktj + j) = 
+     .            pgs_antikt_dist(pktj(1,i),etaktj(i),phiktj(i),
+     .                        pktj(1,j),etaktj(j),phiktj(j))
+        enddo
+      enddo
+
+      done = .false.
+      npass = 0
+
+      do while(.not.done)
+
+        npass = npass + 1
+
+c  2. loop over all pairs of particles, finding minimum d to others and dbeam
+
+        dmin = 1.0e20
+
+        done = .true.
+
+        do i=1,nktj
+
+          if(eaten(i).lt.0) then
+
+            done = .false.
+
+c check pair distance
+            if(i.lt.nktj) then
+              do j = i+1,nktj 
+                if(eaten(j).lt.0) then
+                  dist = distances((i-1)*nktj + j)
+                  if(dist .lt. dmin) then
+                    dmin = dist
+                    imin = i
+                    jmin = j
+                  endif
+                endif
+              enddo
+            endif
+
+c check beam distance
+            if(1D0/(v4pt(pktj(1,i))**2).lt.dmin) then
+              dmin = 1D0/(v4pt(pktj(1,i))**2)
+              imin = i
+              jmin = 0
+            endif
+
+          endif
+
+        enddo
+
+c  3. merge as needed; remove "eaten" particles from live list
+
+        if(.not.done) then
+          if(jmin.eq.0) then  ! particle is on its own
+            eaten(imin) = 0
+          else
+            if(v4pt(pktj(1,imin)).lt.v4pt(pktj(1,jmin))) then
+              eaten(imin) = jmin
+              pktj(1,jmin) = pktj(1,jmin) + pktj(1,imin)
+              pktj(2,jmin) = pktj(2,jmin) + pktj(2,imin)
+              pktj(3,jmin) = pktj(3,jmin) + pktj(3,imin)
+              pktj(4,jmin) = pktj(4,jmin) + pktj(4,imin)
+              etaktj(jmin) = v4eta(pktj(1,jmin))
+              phiktj(jmin) = v4phi(pktj(1,jmin))
+              mktj(jmin) = mktj(jmin) + mktj(imin)
+              do m=1,mktj(imin)
+                lisktj(mktj(jmin)+m,jmin) = lisktj(m,imin)
+              enddo
+              if(mktj(jmin).ge.mktjmx) then
+                write(pgs_log_unit,'('' kt jet multiplicity '',
+     .                  ''maximum (300) reached '')')
+                mktj(imin) = mktj(imin)-1
+              endif
+              idis = jmin
+            else
+              eaten(jmin) = imin
+              pktj(1,imin) = pktj(1,imin) + pktj(1,jmin)
+              pktj(2,imin) = pktj(2,imin) + pktj(2,jmin)
+              pktj(3,imin) = pktj(3,imin) + pktj(3,jmin)
+              pktj(4,imin) = pktj(4,imin) + pktj(4,jmin)
+              etaktj(imin) = v4eta(pktj(1,imin))
+              phiktj(imin) = v4phi(pktj(1,imin))
+              mktj(imin) = mktj(imin) + mktj(jmin)    
+              do m=1,mktj(jmin)
+                lisktj(mktj(imin)+m,imin) = lisktj(m,jmin)
+              enddo
+              if(mktj(imin).ge.mktjmx) then
+                write(pgs_log_unit,'('' kt jet multiplicity'',
+     .                  '' maximum (300) reached '')')
+                mktj(imin) = mktj(imin)-1
+                idis = imin
+              endif
+
+c now re-do distance calculation for particle 
+c that eats the other one (idis)
+
+              do i=1,nktj-1
+                do j=i+1,nktj
+                  if(i.eq.idis.or.j.eq.idis) then
+                    distances((i-1)*nktj + j) = 
+     .                pgs_antikt_dist(pktj(1,i),etaktj(i),phiktj(i),
+     .                                pktj(1,j),etaktj(j),phiktj(j))
+                  endif
+                enddo               
+              enddo
+
+            endif
+          endif
+        endif
+
+      enddo
+
+c  4. fill in PGS arrays with list of clusters
+
+c make ET-sorted list of clusters
+
+      numclu = 0
+      done = .false.
+      do while(.not.done)
+
+        done = .true.
+
+        etmax = 0.
+        do i=1,nktj
+          if(eaten(i).eq.0.and.sorted(i).eq.0) then
+            done = .false.
+            etjet = v4et(pktj(1,i)) 
+            if(etjet.gt.etmax) then
+              imax = i
+              etmax = etjet
+            endif
+          endif
+        enddo
+
+        if(numclu.lt.nclumx) then
+          if(.not.done) then
+            numclu = numclu + 1
+            lisclu(numclu) = imax
+            sorted(imax) = 1
+          endif
+        else
+          print '('' PGS_KT_JETS: maximum number'',
+     .            '' of clusters (300) reached  '')'
+          done = .true.
+        endif
+
+      enddo
+
+c zero out cluster map
+
+      do iphi=1,nphical
+        do ieta=1,netacal
+          cclu(ieta,iphi) = 0
+        enddo
+      enddo
+
+c fill in cluster arrays
+
+      nktjck = 0
+
+      do i=1,numclu
+
+        iktj = lisclu(i)
+
+c seed tower eta, phi
+
+        etaclu(i) = ktjeta(iktj)
+        phiclu(i) = ktjphi(iktj)
+
+c cluster eta-phi map; keep track of em/had energy
+
+        em = 0.
+        eh = 0.
+
+        do j=1,mktj(iktj)
+          ieta = ktjeta(lisktj(j,iktj))
+          iphi = ktjphi(lisktj(j,iktj))
+          cclu(ieta,iphi) = i
+          em = em + ecal(ieta,iphi)
+          eh = eh + hcal(ieta,iphi)
+        enddo
+
+        pclu(1,i) = pktj(1,iktj)
+        pclu(2,i) = pktj(2,iktj)
+        pclu(3,i) = pktj(3,iktj)
+        pclu(4,i) = pktj(4,iktj)
+        pclu(5,i) = v4mass(pktj(1,iktj))
+
+c em, had, em fraction
+
+        emclu(i) = em
+        ehclu(i) = eh
+        efclu(i) = em/(em+eh)
+
+c cluster width, multiplicity  
+
+        mulclu(i) = mktj(iktj)
+
+        widclu(i) = pgs_cluster_width(i)
+
+        nktjck = nktjck + mulclu(i)
+
+      enddo
+
+      return
+      end
+
+
+
+      real*8 function pgs_antikt_dist(p1,eta1,phi1,p2,eta2,phi2)
+
+c calculate distance for kt jet finder
+
+      implicit none
+
+      include 'pgs.inc'
+
+      real*8 p1,eta1,phi1,p2,eta2,phi2
+
+      real*8 pt1,pt2,delphi
+
+c -----------------------------------------------------------------
+
+      pt1 = v4pt(p1)
+      pt2 = v4pt(p2)
+
+      delphi = phi2 - phi1
+      if(delphi.gt.+pi) delphi = delphi - 2.0*pi
+      if(delphi.lt.-pi) delphi = delphi + 2.0*pi
+
+      if(pt1.gt.pt2) then
+        pgs_antikt_dist = (1D0/pt1**2) *
+     .                    ((eta1-eta2)**2 + delphi**2)/conesize**2
+      else
+        pgs_antikt_dist = (1D0/pt2**2) * 
+     .                    ((eta1-eta2)**2 + delphi**2)/conesize**2
+      endif
+ 
+      return
+      end
