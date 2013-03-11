@@ -1092,7 +1092,10 @@ c find trigger objects
 
       call pgs_find_photon_electron_trig
       call pgs_find_muon_trig
-      call pgs_find_tau_trig
+      if((jet_alg.eq.'ktjet').OR.(jet_alg.eq.'cone') 
+     .   .OR.(jet_alg.eq.'antikt')) then
+        call pgs_find_tau_trig
+      endif
       call pgs_find_jet_trig
       call pgs_find_vertex_trig
       call pgs_find_met_trig
@@ -2746,12 +2749,12 @@ c initialize
 
 c find jet clusters with kt algorithm
  
-      if(jet_alg.eq.'ktjet') then
+      if((jet_alg.eq.'ktjet').OR.(jet_alg.eq.'ktjetnotau')) then
         call pgs_kt_jets
-      elseif(jet_alg.eq.'cone') then
+      elseif((jet_alg.eq.'cone').OR.(jet_alg.eq.'conenotau')) then
         call pgs_cone_jets
 c IWKIM addition
-      elseif(jet_alg.eq.'antikt') then 
+      elseif((jet_alg.eq.'antikt').OR.(jet_alg.eq.'antiktnotau')) then 
         call pgs_antikt_jets 
       else
         call exit(-1)
@@ -2770,8 +2773,10 @@ c find muons
       call pgs_find_muons
 
 c find taus (hadronic decays)
-
-      call pgs_find_taus
+      if((jet_alg.eq.'ktjet').OR.(jet_alg.eq.'cone') 
+     .    .OR.(jet_alg.eq.'antikt')) then
+        call pgs_find_taus
+      endif 
 
 c find jets (including b-tagging)
 
