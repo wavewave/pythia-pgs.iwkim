@@ -1,0 +1,12 @@
+Author: Johan Alwall
+E-mail: alwall@slac.stanford.edu
+
+If there are problems compiling the psg binary, they could be due to
+incompatibilities in the versions of gcc used to compile Root and for
+the Fortran files. For me, these problems were solved by including the
+gcc 4 libraries libgcc.a and libgcc_eh.a, with the following addition
+to the variable LIBS2 in the makefile:
+
+-L/usr/lib/gcc/powerpc-apple-darwin8/4.0.1 -lgcc -lgcc_eh -bind_at_load
+
+The path to gcc 4.0.1 might need to be changed depending on the configuration of the system.
